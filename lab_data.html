@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>健保雲端檢驗結果解析器</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 200px; }
+    input, select, button { margin: 5px 0; }
+    pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>健保雲端檢驗結果解析器</h1>
+  <label>貼上健保雲端截圖文字：</label><br>
+  <textarea id="rawInput" placeholder="請將整段文字貼入此處..."></textarea><br>
+
+  <label>年齡：</label>
+  <input type="number" id="age" placeholder="可留空"><br>
+  <label>性別：</label>
+  <select id="gender">
+    <option value="">--留空--</option>
+    <option value="M">男</option>
+    <option value="F">女</option>
+  </select><br>
+  <button onclick="process()">解析並產生結果</button>
+
+  <h2>結果</h2>
+  <pre id="output"></pre>
+
+  <script>
+    function process() {
+      const text = document.getElementById('rawInput').value;
+      const age = document.getElementById('age').value;
+      const gender = document.getElementById('gender').value;
+
+      // 對應表
+      const mapNames = [
+        { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
+        { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
+        { keys: ['血液及體液葡萄糖','Glucose','Glu(AC)','飯前血糖','空腹血糖','飯前血糖'], key: 'AC_val' },
+        { keys: ['醣化血紅素','Hemoglobin A1c','HbA1c'], key: 'AC_pct' },
+        { keys: ['尿酸','Uric acid','UA'], key: 'UA' },
+        { keys: ['肌酸酐','Creatinine','Cre'], key: 'Cre' },
+        { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
+        { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
+        { keys: ['高密度脂蛋白','HDL-C','HDL'], key: 'HDL' },
+        { keys: ['低密度脂蛋白','LDL-C','LDL'], key: 'LDL' },
+        { keys: ['eGFR'], key: 'eGFR' }
+      ];
+      const data = {};
+
+      // 偵測第二種格式
+
+      // 偵測第二種格式: 同時有最近一次與上一次
+const headerMatch = text.match(/最近一次檢查值(\d{3}\/\d{2}\/\d{2}).*?上一次檢查值.*?(\d{3}\/\d{2}\/\d{2})/);
+if (headerMatch) {
+  // 使用固定日期標示 "-/-"
+  const entryKeys = ['prev', 'recent'];
+  entryKeys.forEach(k => data[k] = {});
+  const lines = text.split(/\r?\n/);
+  let inSection = false;
+  lines.forEach(line => {
+    if (/^(血脂肪檢查|血糖檢查|腎功能檢查|肝功能檢查)/.test(line)) {
+      inSection = true; return;
+    }
+    if (inSection && line.trim() && !/^結果/.test(line)) {
+      const parts = line.split(/\t+/);
+      if (parts.length < 3) return;
+      const name = parts[0].trim();
+      // parts[1] = 最近一次, parts[2] = 上一次
+      [parts[2], parts[1]].forEach((val, idx) => {
+        const num = val.match(/[-+]?\d*\.?\d+/);
+        if (!num) return;
+        const value = num[0];
+        mapNames.forEach(item => item.keys.forEach(k => {
+          if (name.includes(k)) data[entryKeys[idx]][item.key] = value;
+        }));
+      });
+    }
+  });
+} else {
+  // 原始表格格式...
+
+        // 原始表格格式
+        const recordRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
+        const records = text.match(recordRegex) || [];
+        records.forEach(rec => {
+          const single = rec.replace(/\n(?!\d+\t)/g, ' ');
+          const parts = single.split(/\t+/);
+          if (parts.length < 5) return;
+          const dateRaw = parts[1].trim();
+          const [y,m] = dateRaw.split('/');
+          const dateKey = `${y}/${parseInt(m,10)}`;
+          const name = parts[3].trim();
+          const rawVal = parts[4].trim();
+          const numMatch = rawVal.match(/[-+]?\d*\.?\d+/);
+          if (!numMatch) return;
+          const value = numMatch[0];
+          data[dateKey] = data[dateKey] || {};
+          mapNames.forEach(item => item.keys.forEach(k => {
+            if (name.includes(k)) data[dateKey][item.key] = value;
+          }));
+        });
+      }
+
+      // eGFR 計算
+      function calcEGFR(age, gender, cr) {
+        const scr = parseFloat(cr);
+        if (isNaN(scr) || !age) return '';
+        let egfr = 186 * Math.pow(scr, -1.154) * Math.pow(age, -0.203);
+        if (gender === 'F') egfr *= 0.742;
+        return egfr.toFixed(1);
+      }
+      Object.keys(data).forEach(date => {
+        const d = data[date];
+        if (!d.eGFR && age && d.Cre) d.eGFR = calcEGFR(age, gender, d.Cre);
+      });
+
+      // 排序
+      const sorted = Object.keys(data).sort((a,b) => {
+        const [ya,ma] = a.split('/').map(Number);
+        const [yb,mb] = b.split('/').map(Number);
+        return ya- yb || ma-mb;
+      });
+
+      const out = sorted.map(date => {
+        const d = data[date];
+        const LFT = `${d.GOT||''}/${d.GPT||''}`;
+        const GFR = `${d.eGFR||''}`;
+        const AC = `${d.AC_val||''}/${d.AC_pct||''}`;
+        return `${date} LFT:${LFT} GFR:${GFR} UA:${d.UA||''} TC:${d.TC||''} TG:${d.TG||''} HDL:${d.HDL||''} LDL:${d.LDL||''} AC:${AC}`;
+      });
+
+      document.getElementById('output').textContent = out.join('\n') || '無可用資料';
+    }
+  </script>
+</body>
+</html>
