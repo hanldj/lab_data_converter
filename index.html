@@ -141,6 +141,7 @@
         if (d.LDL) parts.push(`LDL:${d.LDL}`);
         if ((d.AC_val || d.AC_pct)) parts.push(`AC:${d.AC_val||''}/${d.AC_pct||''}`);
         if (d.TSH) parts.push(`TSH:${d.TSH}`);
+        if (d.AFP) parts.push(`AFP:${d.AFP}`);
         return parts.join(' ');
       });
 
