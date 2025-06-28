@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>健保雲端檢驗結果解析器</title>
+  <title>健保雲端檢驗/用藥解析器</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
     textarea { width: 100%; height: 200px; }
@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h1>健保雲端檢驗結果解析器</h1>
+  <h1>健保雲端檢驗/用藥解析器</h1>
   <label>貼上健保雲端截圖文字：</label><br>
   <textarea id="rawInput" placeholder="請將整段文字貼入此處..."></textarea><br>
 
@@ -34,118 +34,98 @@
       const text = document.getElementById('rawInput').value;
       const age = document.getElementById('age').value;
       const gender = document.getElementById('gender').value;
+      let result = [];
 
-      const mapNames = [
-        { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
-        { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
-        { keys: ['血液及體液葡萄糖','Glucose','Glu(AC)','飯前血糖','空腹血糖'], key: 'AC_val' },
-        { keys: ['醣化血紅素','Hemoglobin A1c','HbA1c'], key: 'AC_pct' },
-        { keys: ['尿酸','Uric acid','Uric Acid','UA'], key: 'UA' },
-        { keys: ['肌酸酐','Creatinine','Cre'], key: 'Cre' },
-        { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
-        { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
-        { keys: ['高密度脂蛋白','HDL-C','HDL'], key: 'HDL' },
-        { keys: ['低密度脂蛋白','LDL-C','LDL'], key: 'LDL' },
-        { keys: ['eGFR','腎絲球過濾率'], key: 'eGFR' },
-        { keys: ['TSH'], key: 'TSH' },
-        { keys: ['AFP','α－胎兒蛋白','α-fetoprotein'], key: 'AFP' }
-      ];
-      const data = {};
-      let isSecondFormat = false;
-
-      // 偵測第二種格式
-      const headerMatch = text.match(/最近一次檢查值\d{3}\/\d{2}\/\d{2}.*?上一次檢查值.*?\d{3}\/\d{2}\/\d{2}/);
-      if (headerMatch) {
-        isSecondFormat = true;
-        const entryKeys = ['prev','recent'];
-        entryKeys.forEach(k => data[k] = {});
-        const lines = text.split(/\r?\n/);
-        let inSection = false;
-        lines.forEach(line => {
-          if (/^(血脂肪檢查|血糖檢查|腎功能檢查|肝功能檢查)/.test(line)) {
-            inSection = true; return;
-          }
-          if (inSection && line.trim() && !/^結果/.test(line)) {
-            const parts = line.split(/\t+/);
-            if (parts.length < 3) return;
-            const name = parts[0].trim();
-            entryKeys.forEach((k, idx) => {
-              const raw = parts[idx+1] || '';
-              const num = raw.match(/[-+]?\d*\.?\d+/);
-              if (!num) return;
-              const value = num[0];
-              mapNames.forEach(item => item.keys.forEach(key => {
-                if (name.includes(key)) data[k][item.key] = value;
-              }));
-            });
+      // 檢測用藥紀錄表格
+      if (/項次\s+就醫日期/.test(text)) {
+        // 將整段用藥紀錄按記錄編號分組
+        const medRecRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
+        const records = text.match(medRecRegex) || [];
+        const meds = new Set();
+        records.forEach(rec => {
+          // 去掉換行後的斷行
+          const single = rec.replace(/\n(?!\d+\t)/g, ' ');
+          const parts = single.split(/\t+/);
+          // 給藥日數位於倒數第三欄
+          const days = parseInt(parts[parts.length - 3], 10);
+          // 藥品名稱位於倒數第五或倒數第四
+          const name = parts[parts.length - 5] || parts[parts.length - 4] || '';
+          if (days > 27 && name) {
+            const firstWords = name.trim().split(/\s+/);
+            meds.add(firstWords[0]);
           }
         });
-      } else {
-        // 原始表格格式
-        const recordRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
-        const records = text.match(recordRegex) || [];
+        if (meds.size) {
+          result.push('PH: ' + Array.from(meds).join(' '));
+        }
+      }
+      // 否則處理檢驗結果
+      else if (/項次\s+檢驗日期/.test(text)) {
+        const mapNames = [
+          { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
+          { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
+          { keys: ['血液及體液葡萄糖','Glucose-Ante Cibum','Glu','AC','飯前血糖'], key: 'AC_val' },
+          { keys: ['醣化血紅素','HbA1c','Hemoglobin A1c'], key: 'AC_pct' },
+          { keys: ['尿酸','Uric acid','UA'], key: 'UA' },
+          { keys: ['肌酸酐','Creatinine','Cre'], key: 'Cre' },
+          { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
+          { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
+          { keys: ['高密度脂蛋白','HDL-C','HDL'], key: 'HDL' },
+          { keys: ['低密度脂蛋白','LDL-C','LDL'], key: 'LDL' },
+          { keys: ['eGFR','腎絲球過濾率'], key: 'eGFR' },
+          { keys: ['TSH'], key: 'TSH' },
+          { keys: ['AFP','α－胎兒蛋白','α-fetoprotein'], key: 'AFP' }
+        ];
+        const data = {};
+        const recRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
+        const records = text.match(recRegex) || [];
         records.forEach(rec => {
           const single = rec.replace(/\n(?!\d+\t)/g, ' ');
           const parts = single.split(/\t+/);
           if (parts.length < 5) return;
-          const dateRaw = parts[1].trim();
-          const [y,m] = dateRaw.split('/');
-          const dateKey = `${y}/${parseInt(m,10)}`;
-          const name = parts[3].trim();
-          const rawVal = parts[4].trim();
+          const dateRaw = parts[1];
+          const name = parts[3];
+          const rawVal = parts[4];
           const numMatch = rawVal.match(/[-+]?\d*\.?\d+/);
           if (!numMatch) return;
           const value = numMatch[0];
-          data[dateKey] = data[dateKey] || {};
-          mapNames.forEach(item => item.keys.forEach(key => {
-            if (name.includes(key)) data[dateKey][item.key] = value;
+          const [y,m] = dateRaw.split('/');
+          const key = y + '/' + parseInt(m,10);
+          data[key] = data[key]||{};
+          mapNames.forEach(item => item.keys.forEach(k => {
+            if (name.includes(k)) data[key][item.key] = value;
           }));
         });
-      }
-
-      // eGFR 計算
-      function calcEGFR(age, gender, cr) {
-        const scr = parseFloat(cr);
-        if (isNaN(scr) || !age) return '';
-        let egfr = 186 * Math.pow(scr, -1.154) * Math.pow(age, -0.203);
-        if (gender === 'F') egfr *= 0.742;
-        return egfr.toFixed(1);
-      }
-      Object.keys(data).forEach(key => {
-        const d = data[key];
-        if (!d.eGFR && age && d.Cre) d.eGFR = calcEGFR(age, gender, d.Cre);
-      });
-
-      let sortedKeys = Object.keys(data);
-      if (isSecondFormat) {
-        // 固定 prev, recent 順序
-        sortedKeys = ['prev','recent'];
-      } else {
-        sortedKeys.sort((a,b) => {
-          const [ya,ma] = a.split('/').map(Number);
-          const [yb,mb] = b.split('/').map(Number);
-          return ya - yb || ma - mb;
+        // eGFR 計算
+        function calcEGFR(age, gender, cr) {
+          const scr = parseFloat(cr);
+          if (isNaN(scr) || !age) return '';
+          let egfr = 186 * Math.pow(scr, -1.154) * Math.pow(age, -0.203);
+          if (gender==='F') egfr*=0.742;
+          return egfr.toFixed(1);
+        }
+        Object.keys(data).forEach(k => {
+          if (!data[k].eGFR && age && data[k].Cre) data[k].eGFR = calcEGFR(age, gender, data[k].Cre);
+        });
+        const sorted = Object.keys(data).sort((a,b)=>{const [ya,ma]=a.split('/').map(Number);const [yb,mb]=b.split('/').map(Number);return ya-yb||ma-mb;});
+        sorted.forEach(key=>{
+          const d = data[key];
+          // 移除無數據欄位
+          const parts = [`${key}`];
+          if (d.GOT||d.GPT) parts.push(`LFT:${d.GOT||''}/${d.GPT||''}`);
+          if (d.eGFR) parts.push(`GFR:${d.eGFR}`);
+          if (d.UA) parts.push(`UA:${d.UA}`);
+          if (d.TC) parts.push(`TC:${d.TC}`);
+          if (d.TG) parts.push(`TG:${d.TG}`);
+          if (d.HDL) parts.push(`HDL:${d.HDL}`);
+          if (d.LDL) parts.push(`LDL:${d.LDL}`);
+          if (d.AC_val||d.AC_pct) parts.push(`AC:${d.AC_val||''}/${d.AC_pct||''}`);
+          if (d.TSH) parts.push(`TSH:${d.TSH}`);
+          if (d.AFP) parts.push(`AFP:${d.AFP}`);
+          result.push(parts.join(' '));
         });
       }
-
-      const out = sortedKeys.map(key => {
-        const d = data[key];
-        const dateLabel = isSecondFormat ? '-/-' : key;
-        const parts = [dateLabel];
-        if ((d.GOT || d.GPT)) parts.push(`LFT:${d.GOT||''}/${d.GPT||''}`);
-        if (d.eGFR) parts.push(`GFR:${d.eGFR}`);
-        if (d.UA) parts.push(`UA:${d.UA}`);
-        if (d.TC) parts.push(`TC:${d.TC}`);
-        if (d.TG) parts.push(`TG:${d.TG}`);
-        if (d.HDL) parts.push(`HDL:${d.HDL}`);
-        if (d.LDL) parts.push(`LDL:${d.LDL}`);
-        if ((d.AC_val || d.AC_pct)) parts.push(`AC:${d.AC_val||''}/${d.AC_pct||''}`);
-        if (d.TSH) parts.push(`TSH:${d.TSH}`);
-        if (d.AFP) parts.push(`AFP:${d.AFP}`);
-        return parts.join(' ');
-      });
-
-      document.getElementById('output').textContent = out.join('\n') || '無可用資料';
+      document.getElementById('output').textContent = result.join('\n')||'無可用資料';
     }
   </script>
 </body>
