@@ -47,7 +47,7 @@
           const single = rec.replace(/\n(?!\d+\t)/g, ' ');
           const parts = single.split(/\t+/);
           // 給藥日數位於倒數第三欄
-          const days = parseInt(parts[parts.length - 3], 10);
+          const days = parseInt(parts[parts.length - 2], 10);
           // 藥品名稱位於倒數第五或倒數第四
           const name = parts[parts.length - 5] || parts[parts.length - 4] || '';
           if (days > 27 && name) {
