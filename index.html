@@ -35,16 +35,20 @@
       const age = document.getElementById('age').value;
       const gender = document.getElementById('gender').value;
       let result = [];
-      
+
       // 檢測用藥紀錄表格
       if (/項次\s+就醫日期/.test(text)) {
+        // 將整段用藥紀錄按記錄編號分組
         const medRecRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
         const records = text.match(medRecRegex) || [];
         const meds = new Set();
         records.forEach(rec => {
+          // 去掉換行後的斷行
           const single = rec.replace(/\n(?!\d+\t)/g, ' ');
           const parts = single.split(/\t+/);
+          // 給藥日數位於倒數第三欄
           const days = parseInt(parts[parts.length - 3], 10);
+          // 藥品名稱位於倒數第五或倒數第四
           const name = parts[parts.length - 5] || parts[parts.length - 4] || '';
           if (days > 27 && name) {
             const firstWords = name.trim().split(/\s+/);
@@ -55,19 +59,19 @@
           result.push('PH: ' + Array.from(meds).join(' '));
         }
       }
-      // 處理檢驗結果
+      // 否則處理檢驗結果
       else if (/項次\s+檢驗日期/.test(text)) {
         const mapNames = [
-          { keys: ['總膽固醇','Cholesterol','T-CHO'], key: 'TC' },
+          { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
           { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
-          { keys: ['血液及體液葡萄糖','Glucose-Ante Cibum','Glu(AC)'], key: 'AC_val' },
-          { keys: ['醣化血紅素','HbA1c'], key: 'AC_pct' },
-          { keys: ['尿酸','Uric acid'], key: 'UA' },
-          { keys: ['肌酸酐','Creatinine'], key: 'Cre' },
+          { keys: ['血液及體液葡萄糖','Glucose-Ante Cibum','Glu','AC','飯前血糖'], key: 'AC_val' },
+          { keys: ['醣化血紅素','HbA1c','Hemoglobin A1c'], key: 'AC_pct' },
+          { keys: ['尿酸','Uric acid','UA'], key: 'UA' },
+          { keys: ['肌酸酐','Creatinine','Cre'], key: 'Cre' },
           { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
           { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
-          { keys: ['高密度脂蛋白－膽固醇','HDL-C'], key: 'HDL' },
-          { keys: ['低密度脂蛋白－膽固醇','LDL-C'], key: 'LDL' },
+          { keys: ['高密度脂蛋白','HDL-C','HDL'], key: 'HDL' },
+          { keys: ['低密度脂蛋白','LDL-C','LDL'], key: 'LDL' },
           { keys: ['eGFR','腎絲球過濾率'], key: 'eGFR' },
           { keys: ['TSH'], key: 'TSH' },
           { keys: ['AFP','α－胎兒蛋白','α-fetoprotein'], key: 'AFP' }
@@ -80,7 +84,7 @@
           const parts = single.split(/\t+/);
           if (parts.length < 5) return;
           const dateRaw = parts[1];
-          const name = parts[3].trim();
+          const name = parts[3];
           const rawVal = parts[4];
           const numMatch = rawVal.match(/[-+]?\d*\.?\d+/);
           if (!numMatch) return;
@@ -88,12 +92,9 @@
           const [y,m] = dateRaw.split('/');
           const key = y + '/' + parseInt(m,10);
           data[key] = data[key]||{};
-          mapNames.forEach(item => {
-            item.keys.forEach(k => {
-              const regex = new RegExp('\\\b' + k.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&') + '\\b','i');
-              if (regex.test(name)) data[key][item.key] = value;
-            });
-          });
+          mapNames.forEach(item => item.keys.forEach(k => {
+            if (name.includes(k)) data[key][item.key] = value;
+          }));
         });
         // eGFR 計算
         function calcEGFR(age, gender, cr) {
@@ -109,6 +110,7 @@
         const sorted = Object.keys(data).sort((a,b)=>{const [ya,ma]=a.split('/').map(Number);const [yb,mb]=b.split('/').map(Number);return ya-yb||ma-mb;});
         sorted.forEach(key=>{
           const d = data[key];
+          // 移除無數據欄位
           const parts = [`${key}`];
           if (d.GOT||d.GPT) parts.push(`LFT:${d.GOT||''}/${d.GPT||''}`);
           if (d.eGFR) parts.push(`GFR:${d.eGFR}`);
