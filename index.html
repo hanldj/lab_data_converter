@@ -6,15 +6,14 @@
   <title>健保雲端檢驗/用藥解析器</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
-    textarea { width: 100%; height: 200px; }
+    textarea { width: 100%; margin: 5px 0; }
     input, select, button { margin: 5px 0; }
-    pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
   <h1>健保雲端檢驗/用藥解析器</h1>
   <label>貼上健保雲端截圖文字：</label><br>
-  <textarea id="rawInput" placeholder="請將整段文字貼入此處..."></textarea><br>
+  <textarea id="rawInput" placeholder="請將整段文字貼入此處..." rows="6"></textarea><br>
 
   <label>年齡：</label>
   <input type="number" id="age" placeholder="可留空"><br>
@@ -26,48 +25,44 @@
   </select><br>
   <button onclick="process()">解析並產生結果</button>
 
-  <h2>結果</h2>
-  <pre id="output"></pre>
+  <h2>結果 (可編輯)</h2>
+  <textarea id="output" placeholder="結果會顯示在此處，可手動修改..." rows="6"></textarea>
 
   <script>
     function process() {
       const text = document.getElementById('rawInput').value;
-      const age = document.getElementById('age').value;
+      const age = parseInt(document.getElementById('age').value, 10);
       const gender = document.getElementById('gender').value;
-      let result = [];
+      const result = [];
 
-      // 檢測用藥紀錄表格
+      // 用藥紀錄檢測
       if (/項次\s+就醫日期/.test(text)) {
-        // 將整段用藥紀錄按記錄編號分組
         const medRecRegex = /(\d+\t[\s\S]*?)(?=\n\d+\t|$)/g;
         const records = text.match(medRecRegex) || [];
         const meds = new Set();
         records.forEach(rec => {
-          // 去掉換行後的斷行
           const single = rec.replace(/\n(?!\d+\t)/g, ' ');
           const parts = single.split(/\t+/);
-          // 給藥日數位於倒數第三欄
-          const days = parseInt(parts[parts.length - 3], 10);
-          // 藥品名稱位於倒數第五或倒數第四
+          // 使用「單筆餘藥日數」欄位（倒數第二欄）
+          const remainder = parseInt(parts[parts.length - 2], 10);
           const name = parts[parts.length - 5] || parts[parts.length - 4] || '';
-          if (days > 27 && name) {
-            const firstWords = name.trim().split(/\s+/);
-            meds.add(firstWords[0]);
+          if (!isNaN(remainder) && remainder > 27 && name) {
+            meds.add(name.trim().split(/\s+/)[0]);
           }
         });
         if (meds.size) {
           result.push('PH: ' + Array.from(meds).join(' '));
         }
       }
-      // 否則處理檢驗結果
+      // 檢驗結果檢測
       else if (/項次\s+檢驗日期/.test(text)) {
         const mapNames = [
           { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
           { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
-          { keys: ['血液及體液葡萄糖','Glucose-Ante Cibum','Glu','AC','飯前血糖'], key: 'AC_val' },
-          { keys: ['醣化血紅素','HbA1c','Hemoglobin A1c','A1C (HbA1C)'], key: 'AC_pct' },
+          { keys: ['血液及體液葡萄糖','Glucose','Ante Cibum','Glu','AC','飯前血糖'], key: 'AC_val' },
+          { keys: ['醣化血紅素','HbA1c','Hemoglobin A1c','A1C'], key: 'AC_pct' },
           { keys: ['尿酸','Uric acid'], key: 'UA' },
-          { keys: ['肌酸酐','肌酸酐、血','Creatinine','Cre','Crea,'], key: 'Cre' },
+          { keys: ['肌酸酐','Creatinine','Cre','Crea'], key: 'Cre' },
           { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
           { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
           { keys: ['高密度脂蛋白','HDL-C','HDL'], key: 'HDL' },
@@ -90,42 +85,50 @@
           if (!numMatch) return;
           const value = numMatch[0];
           const [y,m] = dateRaw.split('/');
-          const key = y + '/' + parseInt(m,10);
-          data[key] = data[key]||{};
-          mapNames.forEach(item => item.keys.forEach(k => {
-            if (name.includes(k)) data[key][item.key] = value;
-          }));
+          const key = y + '/' + parseInt(m, 10);
+          data[key] = data[key] || {};
+          mapNames.forEach(item => {
+            item.keys.forEach(k => {
+              if (name.includes(k)) data[key][item.key] = value;
+            });
+          });
         });
         // eGFR 計算
-        function calcEGFR(age, gender, cr) {
+        function calcEGFR(cr) {
           const scr = parseFloat(cr);
-          if (isNaN(scr) || !age) return '';
+          if (isNaN(scr) || isNaN(age)) return '';
           let egfr = 186 * Math.pow(scr, -1.154) * Math.pow(age, -0.203);
-          if (gender==='F') egfr*=0.742;
+          if (gender === 'F') egfr *= 0.742;
           return egfr.toFixed(1);
         }
         Object.keys(data).forEach(k => {
-          if (!data[k].eGFR && age && data[k].Cre) data[k].eGFR = calcEGFR(age, gender, data[k].Cre);
+          if (!data[k].eGFR && data[k].Cre) data[k].eGFR = calcEGFR(data[k].Cre);
         });
-        const sorted = Object.keys(data).sort((a,b)=>{const [ya,ma]=a.split('/').map(Number);const [yb,mb]=b.split('/').map(Number);return ya-yb||ma-mb;});
-        sorted.forEach(key=>{
+        // 排序年月
+        const sorted = Object.keys(data).sort((a, b) => {
+          const [ya, ma] = a.split('/').map(Number);
+          const [yb, mb] = b.split('/').map(Number);
+          return ya - yb || ma - mb;
+        });
+        sorted.forEach(key => {
           const d = data[key];
-          // 移除無數據欄位
-          const parts = [`${key}`];
-          if (d.GOT||d.GPT) parts.push(`LFT:${d.GOT||''}/${d.GPT||''}`);
+          const parts = [key];
+          if (d.GOT || d.GPT) parts.push(`LFT:${d.GOT||''}/${d.GPT||''}`);
           if (d.eGFR) parts.push(`GFR:${d.eGFR}`);
           if (d.UA) parts.push(`UA:${d.UA}`);
           if (d.TC) parts.push(`TC:${d.TC}`);
           if (d.TG) parts.push(`TG:${d.TG}`);
           if (d.HDL) parts.push(`HDL:${d.HDL}`);
           if (d.LDL) parts.push(`LDL:${d.LDL}`);
-          if (d.AC_val||d.AC_pct) parts.push(`AC:${d.AC_val||''}/${d.AC_pct||''}`);
+          if (d.AC_val || d.AC_pct) parts.push(`AC:${d.AC_val||''}/${d.AC_pct||''}`);
           if (d.TSH) parts.push(`TSH:${d.TSH}`);
           if (d.AFP) parts.push(`AFP:${d.AFP}`);
           result.push(parts.join(' '));
         });
       }
-      document.getElementById('output').textContent = result.join('\n')||'無可用資料';
+      // 輸出結果
+      const outEl = document.getElementById('output');
+      outEl.value = result.length ? result.join('\n') : '無可用資料';
     }
   </script>
 </body>
