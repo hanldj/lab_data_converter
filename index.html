@@ -57,11 +57,11 @@
       // 檢驗結果檢測
       else if (/項次\s+檢驗日期/.test(text)) {
         const mapNames = [
-          { keys: ['總膽固醇','Cholesterol','T-CHO','TC'], key: 'TC' },
-          { keys: ['三酸甘油脂','Triglyceride','TG'], key: 'TG' },
-          { keys: ['血液及體液葡萄糖','Glucose','Ante Cibum','Glu','AC','飯前血糖'], key: 'AC_val' },
+          { keys: ['總膽固醇','Cholesterol','T-CHO','TC','CHOL'], key: 'TC' },
+          { keys: ['三酸甘油脂','Triglyceride','TG','T-G'], key: 'TG' },
+          { keys: ['血液及體液葡萄糖','Glucose','Ante Cibum','Glu','AC','飯前血糖','AC-Glu'], key: 'AC_val' },
           { keys: ['醣化血紅素','醣化血色素','HbA1c','Hemoglobin A1c','A1C'], key: 'AC_pct' },
-          { keys: ['尿酸','Uric acid'], key: 'UA' },
+          { keys: ['尿酸','Uric acid','UA'], key: 'UA' },
           { keys: ['肌酸酐','Creatinine','Cre','Crea'], key: 'Cre' },
           { keys: ['血清麩胺酸苯醋酸轉氨基脢','AST','GOT'], key: 'GOT' },
           { keys: ['血清麩胺酸丙酮酸轉氨基脢','ALT','GPT'], key: 'GPT' },
